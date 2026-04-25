@@ -29,7 +29,7 @@ export function ChatMessage({ role, content }: ChatMessageProps) {
           {isUser ? (
             <p>{content}</p>
           ) : (
-            <div className="prose prose-sm max-w-none">
+            <div className="prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0.5 prose-headings:mt-2 prose-headings:mb-1">
               <ReactMarkdown>{content}</ReactMarkdown>
             </div>
           )}
