@@ -6,16 +6,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.auth.router import router as auth_router
 from app.chat.router import router as chat_router
 from app.config import settings
-from app.database import create_tables
+from app.database import create_tables, run_migrations
 from app.documents.router import router as documents_router
 from app.rag.embeddings import get_embeddings
+from app.rag.reranker import load_reranker
 from app.users.router import router as users_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await create_tables()
-    get_embeddings()  # pre-warm FastEmbed model into memory
+    await run_migrations()
+    get_embeddings()       # pre-warm FastEmbed model
+    load_reranker()        # pre-warm cross-encoder (~85MB download on first run)
     yield
 
 
