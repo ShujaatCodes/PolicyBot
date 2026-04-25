@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AlertCircle } from 'lucide-react';
 import { jwtDecode } from 'jwt-decode';
@@ -13,10 +13,11 @@ export default function LoginPage() {
   const { login: authLogin, user } = useAuth();
   const navigate = useNavigate();
 
-  if (user) {
-    navigate(user.role === 'admin' ? '/admin' : '/chat', { replace: true });
-    return null;
-  }
+  useEffect(() => {
+    if (user) {
+      navigate(user.role === 'admin' ? '/admin' : '/chat', { replace: true });
+    }
+  }, [user, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
