@@ -8,12 +8,14 @@ from app.chat.router import router as chat_router
 from app.config import settings
 from app.database import create_tables
 from app.documents.router import router as documents_router
+from app.rag.embeddings import get_embeddings
 from app.users.router import router as users_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await create_tables()
+    get_embeddings()  # pre-warm FastEmbed model into memory
     yield
 
 
