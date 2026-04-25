@@ -1,6 +1,6 @@
 # PolicyBot — RAG Employee Policy Chatbot
 
-An AI-powered chatbot that lets employees ask questions about company policies. Upload PDF policy documents and get instant, accurate answers grounded in those documents.
+An AI-powered chatbot that lets employees ask questions about company policies. Upload PDF policy documents and get instant, accurate answers grounded in those documents — with streaming responses and built-in protection against prompt injection and SQL injection attacks.
 
 **Live Demo:**
 - Frontend: https://policybot-frontend.vercel.app
@@ -14,9 +14,10 @@ An AI-powered chatbot that lets employees ask questions about company policies. 
 |-------|-----------|
 | Frontend | React 18 + TypeScript + Vite + Tailwind CSS |
 | Backend | FastAPI + SQLAlchemy (async) |
-| Database | PostgreSQL + pgvector |
+| Database | PostgreSQL + pgvector + pg_trgm |
 | Embeddings | FastEmbed (`BAAI/bge-small-en-v1.5`) |
 | LLM | Groq (`llama-3.3-70b-versatile`) |
+| Reranker | `cross-encoder/ms-marco-MiniLM-L-6-v2` (local, CPU) |
 | Auth | JWT (python-jose + bcrypt) |
 | Hosting | Railway (backend) + Vercel (frontend) |
 
@@ -27,25 +28,30 @@ An AI-powered chatbot that lets employees ask questions about company policies. 
 ```
 PDF Upload
   → Extract text (pypdf)
-  → Split into chunks (LangChain RecursiveCharacterTextSplitter)
+  → Semantic chunking (LangChain SemanticChunker)
   → Embed chunks (FastEmbed)
-  → Store vectors (pgvector)
+  → Store vectors + full-text index (pgvector + pg_trgm)
 
 User Question
-  → Embed question (FastEmbed)
-  → Find top-4 similar chunks (pgvector similarity search)
-  → Send chunks + question to Groq LLM
-  → Return grounded answer
+  → Guardrails check (SQL injection, prompt injection, script injection)
+  → Hybrid search: vector similarity + full-text (BM25) merged via RRF
+  → Cross-encoder reranking (top-3 most relevant chunks)
+  → Stream answer token-by-token via SSE (Groq LLM)
 ```
 
 ---
 
 ## Features
 
-- **Admin panel** — upload and manage PDF policy documents, manage users
-- **Chat interface** — ask questions in natural language, get answers with source grounding
-- **JWT authentication** — role-based access (admin / user)
-- **Persistent chat history** — all conversations saved to PostgreSQL
+- **Multi-document support** — upload and manage multiple PDF policy documents independently
+- **Hybrid search** — combines pgvector semantic search with pg_trgm full-text search via Reciprocal Rank Fusion
+- **Cross-encoder reranking** — local `ms-marco-MiniLM-L-6-v2` model reranks candidates before answering
+- **SSE streaming** — answers stream token-by-token for instant feedback
+- **Guardrails** — blocks SQL injection, prompt injection, and script injection before they reach the LLM
+- **Admin panel** — upload/delete documents, manage users
+- **Chat interface** — natural language questions with markdown-formatted answers
+- **JWT authentication** — role-based access (admin / employee)
+- **Hidden admin registration** — `/register/admin` route exists but no UI link points to it
 
 ---
 
@@ -55,23 +61,28 @@ User Question
 rag-chatbot/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py           # FastAPI app entry point
-│   │   ├── config.py         # Environment config
-│   │   ├── database.py       # Async DB engine + session
-│   │   ├── models.py         # SQLAlchemy models
-│   │   ├── auth/             # Register, login, JWT
-│   │   ├── chat/             # Chat endpoint + RAG pipeline
-│   │   ├── documents/        # PDF upload + processing
-│   │   ├── rag/              # Embeddings, vectorstore, LLM chain
-│   │   └── users/            # User management (admin)
+│   │   ├── main.py              # FastAPI app entry point + lifespan
+│   │   ├── config.py            # Environment config
+│   │   ├── database.py          # Async DB engine + migrations
+│   │   ├── models.py            # SQLAlchemy models
+│   │   ├── agent/               # LangGraph agent
+│   │   │   ├── guardrails.py    # Injection/attack detection
+│   │   │   └── graph.py         # guard → retrieve → generate pipeline
+│   │   ├── auth/                # Register, login, JWT
+│   │   ├── chat/                # SSE streaming endpoint
+│   │   ├── documents/           # PDF upload + semantic chunking
+│   │   ├── rag/                 # Hybrid search, reranker, LLM chain
+│   │   └── users/               # User management (admin)
+│   ├── tests/                   # 76 tests
+│   ├── Dockerfile
 │   ├── requirements.txt
 │   └── .env.example
 └── frontend/
     ├── src/
-    │   ├── pages/            # LoginPage, ChatPage, AdminPage
-    │   ├── components/       # ChatMessage, DocumentUpload, UserTable
-    │   ├── context/          # AuthContext
-    │   └── api/              # API service classes
+    │   ├── pages/               # LoginPage, RegisterPage, ChatPage, AdminPage
+    │   ├── components/          # ChatMessage, DocumentUpload, Layout
+    │   ├── context/             # AuthContext
+    │   └── api/                 # auth, chat, documents clients
     ├── vercel.json
     └── .env.production
 ```
@@ -84,7 +95,7 @@ rag-chatbot/
 
 - Python 3.11+
 - Node.js 18+
-- PostgreSQL with pgvector extension
+- PostgreSQL with `pgvector` and `pg_trgm` extensions
 - Groq API key (free at [console.groq.com](https://console.groq.com))
 
 ### Backend
@@ -95,7 +106,6 @@ python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 
-# Create .env file
 cp .env.example .env
 # Fill in your values
 
@@ -131,16 +141,18 @@ VITE_API_URL=http://localhost:8000
 
 ### Backend → Railway
 
-1. Create a new Railway project
-2. Add a PostgreSQL service and enable the pgvector extension
-3. Deploy from this repo, set root directory to `backend`
-4. Add environment variables in Railway dashboard
-5. Generate a public domain under Settings → Networking
+1. Create a new Railway project and add a PostgreSQL service
+2. Enable the `pgvector` extension on the database
+3. Deploy from this repo — Railway detects the `Dockerfile` in `backend/`
+4. Add environment variables in the Railway dashboard
+5. Set the exposed port to `8080` under Settings → Networking
+6. Generate a public domain
 
 ### Frontend → Vercel
 
-1. Run `vercel --prod` from the `frontend` directory
-2. Or import the repo in the Vercel dashboard with root directory set to `frontend`
+1. Import the repo in the Vercel dashboard
+2. Set the root directory to `frontend`
+3. Add `VITE_API_URL=<your-railway-url>` as an environment variable
 
 ---
 
@@ -148,12 +160,12 @@ VITE_API_URL=http://localhost:8000
 
 | Method | Endpoint | Description | Auth |
 |--------|----------|-------------|------|
-| POST | `/auth/register` | Register new user | Public |
+| POST | `/auth/register` | Register new employee | Public |
 | POST | `/auth/login` | Login, returns JWT | Public |
-| GET | `/documents/` | List all documents | Admin |
+| GET | `/auth/me` | Get current user | User |
+| GET | `/documents/status` | List uploaded documents | Admin |
 | POST | `/documents/upload` | Upload PDF | Admin |
-| DELETE | `/documents/{id}` | Delete document | Admin |
-| POST | `/chat/` | Send a message | User |
-| GET | `/chat/history` | Get chat history | User |
+| DELETE | `/documents/{id}` | Delete document + chunks | Admin |
+| POST | `/chat/` | Ask a question (non-streaming) | User |
+| POST | `/chat/stream` | Ask a question (SSE streaming) | User |
 | GET | `/users/` | List all users | Admin |
-| GET | `/health` | Health check | Public |
