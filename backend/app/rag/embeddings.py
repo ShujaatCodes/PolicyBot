@@ -1,13 +1,8 @@
 from functools import lru_cache
 
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
-
-from app.config import settings
+from langchain_community.embeddings import FastEmbedEmbeddings
 
 
 @lru_cache(maxsize=1)
-def get_embeddings() -> GoogleGenerativeAIEmbeddings:
-    return GoogleGenerativeAIEmbeddings(
-        model="models/gemini-embedding-001",
-        google_api_key=settings.gemini_api_key,
-    )
+def get_embeddings() -> FastEmbedEmbeddings:
+    return FastEmbedEmbeddings(model_name="BAAI/bge-small-en-v1.5")
