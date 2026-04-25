@@ -32,31 +32,6 @@ async def get_rag_response(question: str) -> dict:
 
 
 async def generate_stream(question: str) -> AsyncGenerator[str, None]:
-    try:
-        candidates: list[Document] = hybrid_search(question, top_k=6)
-        docs = rerank(question, candidates, top_k=3) if candidates else []
-    except Exception:
-        yield f"data: {json.dumps({'token': 'Sorry, something went wrong while searching. Please try again.'})}\n\n"
-        yield f"data: {json.dumps({'done': True, 'sources': []})}\n\n"
-        return
-
-    if not docs:
-        yield f"data: {json.dumps({'token': NO_INFO_RESPONSE})}\n\n"
-        yield f"data: {json.dumps({'done': True, 'sources': []})}\n\n"
-        return
-
-    sources = [
-        {
-            "text": doc.page_content[:300],
-            "chunk_index": doc.metadata.get("chunk_index", 0),
-            "filename": doc.metadata.get("filename", "Unknown"),
-            "page_number": doc.metadata.get("page_number"),
-        }
-        for doc in docs
-    ]
-
-    chain = STRICT_PROMPT | get_llm() | StrOutputParser()
-    async for token in chain.astream({"context": format_docs(docs), "question": question}):
-        yield f"data: {json.dumps({'token': token})}\n\n"
-
-    yield f"data: {json.dumps({'done': True, 'sources': sources})}\n\n"
+    from app.agent.graph import run_agent_stream
+    async for chunk in run_agent_stream(question):
+        yield chunk
