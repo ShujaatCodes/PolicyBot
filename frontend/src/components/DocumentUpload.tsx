@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
-import { Upload, Trash2, CheckCircle, AlertCircle } from 'lucide-react';
-import { uploadDocument, deleteDocument } from '../api/documents';
+import { Upload, Trash2, CheckCircle, AlertCircle, FileText } from 'lucide-react';
+import { uploadDocument, deleteDocumentById } from '../api/documents';
 import type { DocumentStatus } from '../api/documents';
 
 interface DocumentUploadProps {
@@ -11,7 +11,7 @@ interface DocumentUploadProps {
 export function DocumentUpload({ status, onStatusChange }: DocumentUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [uploadResult, setUploadResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const handleFile = useCallback(async (file: File) => {
@@ -42,39 +42,52 @@ export function DocumentUpload({ status, onStatusChange }: DocumentUploadProps) 
     if (file) handleFile(file);
   };
 
-  const handleDelete = async () => {
-    if (!confirm('Delete the policy document? Employees will not be able to get answers until a new document is uploaded.')) return;
-    setIsDeleting(true);
+  const handleDelete = async (documentId: string, filename: string) => {
+    if (!confirm(`Delete "${filename}"? Employees won't be able to ask questions about it.`)) return;
+    setDeletingId(documentId);
     try {
-      await deleteDocument();
+      await deleteDocumentById(documentId);
       onStatusChange();
       setUploadResult(null);
     } catch {
       setUploadResult({ success: false, message: 'Delete failed. Please try again.' });
     } finally {
-      setIsDeleting(false);
+      setDeletingId(null);
     }
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
   return (
     <div className="space-y-4">
-      {status?.has_document && (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <CheckCircle size={18} className="text-emerald-600 flex-shrink-0" />
-            <div>
-              <p className="text-sm font-semibold text-emerald-800">{status.filename}</p>
-              <p className="text-xs text-emerald-600">{status.chunk_count} chunks indexed</p>
+      {status?.has_documents && status.documents.length > 0 && (
+        <div className="space-y-2">
+          {status.documents.map((doc) => (
+            <div key={doc.document_id} className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <CheckCircle size={18} className="text-emerald-600 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-emerald-800 flex items-center gap-1.5">
+                    <FileText size={13} />
+                    {doc.filename}
+                  </p>
+                  <p className="text-xs text-emerald-600">{doc.chunk_count} chunks · {formatFileSize(doc.file_size)}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => handleDelete(doc.document_id, doc.filename)}
+                disabled={deletingId === doc.document_id}
+                className="flex items-center gap-1.5 text-sm text-red-500 hover:text-red-700 transition-colors disabled:opacity-50"
+              >
+                <Trash2 size={14} />
+                {deletingId === doc.document_id ? 'Deleting...' : 'Delete'}
+              </button>
             </div>
-          </div>
-          <button
-            onClick={handleDelete}
-            disabled={isDeleting}
-            className="flex items-center gap-1.5 text-sm text-red-500 hover:text-red-700 transition-colors disabled:opacity-50"
-          >
-            <Trash2 size={14} />
-            {isDeleting ? 'Deleting...' : 'Delete'}
-          </button>
+          ))}
         </div>
       )}
       <div

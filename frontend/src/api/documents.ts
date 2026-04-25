@@ -4,13 +4,20 @@ export interface UploadResponse {
   success: boolean;
   message: string;
   chunks_created: number;
+  document_id: string;
+}
+
+export interface DocumentInfo {
+  document_id: string;
+  filename: string;
+  chunk_count: number;
+  file_size: number;
+  uploaded_at: string;
 }
 
 export interface DocumentStatus {
-  has_document: boolean;
-  filename?: string;
-  chunk_count?: number;
-  uploaded_at?: string;
+  has_documents: boolean;
+  documents: DocumentInfo[];
 }
 
 export const uploadDocument = (file: File) => {
@@ -24,5 +31,5 @@ export const uploadDocument = (file: File) => {
 export const getDocumentStatus = () =>
   client.get<DocumentStatus>('/documents/status');
 
-export const deleteDocument = () =>
-  client.delete('/documents/');
+export const deleteDocumentById = (documentId: string) =>
+  client.delete(`/documents/${documentId}`);
