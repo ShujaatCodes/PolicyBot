@@ -64,7 +64,7 @@ async def get_document_status(db: AsyncSession) -> dict:
     result = await db.execute(
         select(PolicyDocument).order_by(PolicyDocument.uploaded_at.desc())
     )
-    docs = result.scalars().all()
+    docs = [d for d in result.scalars().all() if d.document_id is not None]
 
     if not docs:
         return {"has_documents": False, "documents": []}
