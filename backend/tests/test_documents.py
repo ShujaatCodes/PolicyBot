@@ -51,7 +51,7 @@ async def test_status_no_document(client: AsyncClient, admin_user):
         headers={"Authorization": f"Bearer {token}"},
     )
     assert res.status_code == 200
-    assert res.json()["has_document"] is False
+    assert res.json()["has_documents"] is False
 
 
 async def test_upload_success(client: AsyncClient, admin_user):

@@ -1,6 +1,7 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.pool import NullPool
+from sqlalchemy import text
 
 from app.config import settings
 
@@ -25,3 +26,14 @@ async def get_db():
 async def create_tables() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+
+async def run_migrations() -> None:
+    async with engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm;"))
+        await conn.execute(text(
+            "ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS document_id VARCHAR(36);"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE policy_documents ADD COLUMN IF NOT EXISTS file_size INTEGER DEFAULT 0 NOT NULL;"
+        ))

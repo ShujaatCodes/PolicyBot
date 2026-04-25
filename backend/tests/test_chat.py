@@ -21,10 +21,11 @@ async def test_chat_returns_answer(client: AsyncClient, employee_user):
     mock_docs = [
         Document(
             page_content="Employees receive 20 days of annual leave.",
-            metadata={"chunk_index": 0},
+            metadata={"chunk_index": 0, "filename": "policy.pdf", "page_number": 1},
         )
     ]
-    with patch("app.chat.service.similarity_search", return_value=mock_docs), \
+    with patch("app.chat.service.hybrid_search", return_value=mock_docs), \
+         patch("app.chat.service.rerank", return_value=mock_docs), \
          patch("app.chat.service.generate_answer", new_callable=AsyncMock) as mock_gen:
         mock_gen.return_value = "Employees receive 20 days of annual leave per year."
 
@@ -40,10 +41,11 @@ async def test_chat_returns_answer(client: AsyncClient, employee_user):
         assert "sources" in data
         assert len(data["sources"]) == 1
         assert data["sources"][0]["chunk_index"] == 0
+        assert data["sources"][0]["filename"] == "policy.pdf"
 
 
 async def test_chat_no_docs_returns_fallback(client: AsyncClient, employee_user):
-    with patch("app.chat.service.similarity_search", return_value=[]):
+    with patch("app.chat.service.hybrid_search", return_value=[]):
         token = await _token(client, "employee@example.com", "emppass123")
         res = await client.post(
             "/chat/",

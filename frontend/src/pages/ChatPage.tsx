@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Loader2 } from 'lucide-react';
-import { sendMessage } from '../api/chat';
+import { sendMessageStream } from '../api/chat';
 import { ChatMessage } from '../components/ChatMessage';
 import { Layout } from '../components/Layout';
 import type { Source } from '../api/chat';
@@ -10,6 +10,7 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   sources?: Source[];
+  isStreaming?: boolean;
 }
 
 export default function ChatPage() {
@@ -17,7 +18,7 @@ export default function ChatPage() {
     {
       id: 'welcome',
       role: 'assistant',
-      content: 'Hello! I can answer questions about your company policy document. What would you like to know?',
+      content: 'Hello! I can answer questions about your company policy documents. What would you like to know?',
     },
   ]);
   const [input, setInput] = useState('');
@@ -35,28 +36,44 @@ export default function ChatPage() {
 
     setInput('');
     setError(null);
+
+    const userMsgId = Date.now().toString();
+    const assistantMsgId = (Date.now() + 1).toString();
+
     setMessages((prev) => [
       ...prev,
-      { id: Date.now().toString(), role: 'user', content: question },
+      { id: userMsgId, role: 'user', content: question },
+      { id: assistantMsgId, role: 'assistant', content: '', isStreaming: true },
     ]);
     setIsLoading(true);
 
-    try {
-      const res = await sendMessage(question);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: res.data.answer,
-          sources: res.data.sources,
-        },
-      ]);
-    } catch {
-      setError('Failed to get a response. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
+    await sendMessageStream(
+      question,
+      (token) => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantMsgId
+              ? { ...m, content: m.content + token }
+              : m,
+          ),
+        );
+      },
+      (sources) => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantMsgId
+              ? { ...m, isStreaming: false, sources }
+              : m,
+          ),
+        );
+        setIsLoading(false);
+      },
+      (errorMsg) => {
+        setError(errorMsg);
+        setMessages((prev) => prev.filter((m) => m.id !== assistantMsgId));
+        setIsLoading(false);
+      },
+    );
   }, [input, isLoading]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -71,27 +88,34 @@ export default function ChatPage() {
       <div className="max-w-3xl mx-auto flex flex-col h-[calc(100vh-65px)]">
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
           {messages.map((msg) => (
-            <ChatMessage
-              key={msg.id}
-              role={msg.role}
-              content={msg.content}
-              sources={msg.sources}
-            />
-          ))}
-          {isLoading && (
-            <div className="flex gap-3">
-              <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
-                <Loader2 size={16} className="text-gray-500 animate-spin" />
-              </div>
-              <div className="bg-white border border-gray-200 rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm">
-                <div className="flex gap-1 items-center h-4">
-                  <span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+            <div key={msg.id}>
+              {msg.isStreaming && msg.content === '' ? (
+                <div className="flex gap-3">
+                  <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
+                    <Loader2 size={16} className="text-gray-500 animate-spin" />
+                  </div>
+                  <div className="bg-white border border-gray-200 rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm">
+                    <div className="flex gap-1 items-center h-4">
+                      <span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                      <span className="w-2 h-2 bg-gray-300 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                    </div>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <>
+                  <ChatMessage
+                    role={msg.role}
+                    content={msg.content}
+                    sources={msg.sources}
+                  />
+                  {msg.isStreaming && msg.content && (
+                    <span className="inline-block w-2 h-4 ml-1 bg-gray-500 animate-pulse rounded-sm align-middle" />
+                  )}
+                </>
+              )}
             </div>
-          )}
+          ))}
           {error && (
             <p className="text-center text-sm text-red-500">{error}</p>
           )}
